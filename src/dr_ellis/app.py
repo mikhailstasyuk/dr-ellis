@@ -17,8 +17,8 @@ def get_response(message):
     logger.info(f"Sending message to Groq API: {message}")
     try:
         chat_completion = client.chat.completions.create(
+            model="llama3-70b-8192",
             messages=[{"role": "user", "content": message}],
-            model="llama3-70b-8192"
         )
         response = chat_completion.choices[0].message.content
         logger.info(f"Received response from Groq API: {response}")
