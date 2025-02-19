@@ -1,8 +1,6 @@
 import asyncio
 import os
-
 from logger_config import logger
-
 from dotenv import load_dotenv
 from groq import Groq, APIError
 from telebot.async_telebot import AsyncTeleBot
@@ -12,6 +10,7 @@ load_dotenv()
 
 bot = AsyncTeleBot(os.getenv('BOT_TOKEN'))
 client = Groq(api_key=os.environ['GROQ_API_KEY'])
+
 
 def get_response(message):
     logger.info(f"Sending message to Groq API: {message}")
@@ -25,7 +24,6 @@ def get_response(message):
                 ],
                 model='llama3-70b-8192'
             )
-        
         response = chat_completion.choices[0].message.content
         logger.info(f"Received response from Groq API: {response}")
         return response
@@ -40,11 +38,11 @@ def get_response(message):
         }
         logger.error(f"API error: {e}")
         return error_messages.get(e.status_code, f"API error: {e}")
-    
+
     except Exception as e:
         logger.error(f"An unexpected error occurred: {str(e)}")
         return f"An unexpected error occurred: {str(e)}"
-    
+
 
 @bot.message_handler(commands=['start'])
 async def start(message):
