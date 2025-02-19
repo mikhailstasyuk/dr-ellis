@@ -1,6 +1,8 @@
 import asyncio
 import os
 
+from logger_config import logger
+
 from dotenv import load_dotenv
 from groq import Groq, APIError
 from telebot.async_telebot import AsyncTeleBot
@@ -12,6 +14,7 @@ bot = AsyncTeleBot(os.getenv('BOT_TOKEN'))
 client = Groq(api_key=os.environ['GROQ_API_KEY'])
 
 def get_response(message):
+    logger.info(f"Sending message to Groq API: {message}")
     try:
         chat_completion = client.chat.completions.create(
                 messages=[
@@ -24,6 +27,7 @@ def get_response(message):
             )
         
         response = chat_completion.choices[0].message.content
+        logger.info(f"Received response from Groq API: {response}")
         return response
 
     except APIError as e:
@@ -34,9 +38,11 @@ def get_response(message):
             429: "Rate limit exceeded. Try again later.",
             500: "Internal server error. Try again later."
         }
+        logger.error(f"API error: {e}")
         return error_messages.get(e.status_code, f"API error: {e}")
     
     except Exception as e:
+        logger.error(f"An unexpected error occurred: {str(e)}")
         return f"An unexpected error occurred: {str(e)}"
     
 
@@ -44,6 +50,7 @@ def get_response(message):
 async def start(message):
     greeting_msg = 'Hello, I am Dr. Ellis. How can I help you today?'
     await bot.send_message(message.chat.id, greeting_msg)
+    logger.info(f"User {message.chat.id} started a conversation.")
 
 
 @bot.message_handler(func=lambda message: True, content_types=[
@@ -53,12 +60,14 @@ async def start(message):
 async def handle_non_text(message):
     info_msg = 'I can only process text messages for now.'
     await bot.reply_to(message, info_msg)
+    logger.info(f"User {message.chat.id} sent a non-text message.")
 
 
 @bot.message_handler()
 async def handle_text(message):
+    logger.info(f"User {message.chat.id} sent a message: {message.text}")
     response = get_response(message.text)
     await bot.reply_to(message, response)
-
+    logger.info(f"Dr. Ellis replied to user {message.chat.id}: {response}")
 
 asyncio.run(bot.polling())
