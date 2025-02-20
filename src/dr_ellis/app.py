@@ -4,7 +4,10 @@ import asyncio
 import os
 
 from dotenv import load_dotenv
-from groq import APIError, Groq
+from langchain.chat_models import init_chat_model
+from langchain_core.messages import HumanMessage, SystemMessage, trim_messages
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, MessagesState, StateGraph
 from logger_config import logger
 from telebot.async_telebot import AsyncTeleBot
 
@@ -12,30 +15,87 @@ load_dotenv()
 
 
 bot = AsyncTeleBot(os.getenv("BOT_TOKEN"))
-client = Groq(api_key=os.environ["GROQ_API_KEY"])
+
+model = init_chat_model("qwen-2.5-32b", model_provider="groq")
+trimmer = trim_messages(strategy="last", max_tokens=50, token_counter=len)
+workflow = StateGraph(state_schema=MessagesState)
+
+
+def call_model(state: MessagesState):
+    trimmed_messages = trimmer.invoke(state["messages"])
+    system_prompt = """### Instructions
+Your name is Dr Albert Ellis. You are a certified REBT therapist.
+You are currently in a session with a patient.
+You are using Rational Emotive Behavior Therapy (REBT) to help your patient.
+A patient comes to you with their thoughts.
+Try to help your patient as best as you can.
+
+Adopt a Socratic Dialogue Approach:
+- Structure responses as sequentially unfolding logical deductions.
+- Use targeted questioning to prompt self-examination. Ask one question
+at a time. Try not to overwhelm the patient.
+- Gradually lead the subject to their own realization instead of bluntly
+stating conclusions.
+
+Balance Intellectual Rigor with Conversational Flow:
+- Keep the language sharp, precise, and logical—but not clinical or detached.
+- Alternate between short, impactful sentences and longer, exploratory
+ones for a dynamic rhythm.
+
+Use Psychological Framing:
+- Lean into CBT-style deconstructions: identify cognitive distortions,
+introduce counterarguments, and challenge irrational beliefs.
+- Favor rational explanations over emotional appeals.
+- Repeat key psychological concepts to reinforce ideas: catastrophizing,
+generalizing, self-devaluation.
+
+Engage with Direct Address and Hypotheticals:
+- Use second-person pronouns (“you”) to make the discourse feel personal.
+- Integrate “What if” scenarios to provoke reflection.
+- Encourage the audience to challenge their assumptions rather than dictating
+the ‘correct’ perspective.
+
+Inject Mild Humor and Relatable Analogies:
+- Lightly use self-deprecating or exaggerated humor to break tension.
+- Bring in accessible metaphors (e.g., sports, everyday failures)
+to illustrate points.
+Keep humor subtle and purposeful—never derailing the analytical
+nature of the discussion.
+
+Give Clear, Practical Action Steps:
+- Provide concrete suggestions instead of vague motivational advice.
+- Frame solutions as incremental behavioral changes rather than
+sweeping transformations.
+- Reinforce the acceptance of imperfection as part of progress.
+
+Отвечай только на русском языке.
+### End of Instructions
+
+### Patient:
+"""
+    messages = [SystemMessage(content=system_prompt)] + trimmed_messages
+    response = model.invoke(messages)
+    return {"messages": response}
+
+
+workflow.add_node("model", call_model)
+workflow.add_edge(START, "model")
+
+memory = MemorySaver()
+app = workflow.compile(checkpointer=memory)
 
 
 def get_response(message):
+    content = message.text
+    user_id = message.chat.id
     logger.info(f"Sending message to Groq API: {message}")
     try:
-        chat_completion = client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=[{"role": "user", "content": message}],
+        response = app.invoke(
+            {"messages": [HumanMessage(content=content)], "language": "en"},
+            config={"configurable": {"thread_id": user_id}},
         )
-        response = chat_completion.choices[0].message.content
         logger.info(f"Received response from Groq API: {response}")
-        return response
-
-    except APIError as e:
-        error_messages = {
-            400: "Invalid request. Please check your input.",
-            401: "Unauthorized. Check Groq API key.",
-            404: "Model not found. Verify the model name.",
-            429: "Rate limit exceeded. Try again later.",
-            500: "Internal server error. Try again later.",
-        }
-        logger.error(f"API error: {e}")
-        return error_messages.get(e.status_code, f"API error: {e}")
+        return response["messages"][-1].content
 
     except Exception as e:
         logger.error(f"An unexpected error occurred: {str(e)}")
@@ -44,7 +104,7 @@ def get_response(message):
 
 @bot.message_handler(commands=["start"])
 async def start(message):
-    greeting_msg = "Hello, I am Dr. Ellis. How can I help you today?"
+    greeting_msg = "Привет! Меня зовут доктор Эллис. Чем я могу помочь?"
     await bot.send_message(message.chat.id, greeting_msg)
     logger.info(f"User {message.chat.id} started a conversation.")
 
@@ -71,7 +131,7 @@ async def handle_non_text(message):
 @bot.message_handler()
 async def handle_text(message):
     logger.info(f"User {message.chat.id} sent a message: {message.text}")
-    response = get_response(message.text)
+    response = get_response(message)
     await bot.reply_to(message, response)
     logger.info(f"Dr. Ellis replied to user {message.chat.id}: {response}")
 
