@@ -1,6 +1,9 @@
 # Bot logs
 logs
 
+# Prompt history
+prompts/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
