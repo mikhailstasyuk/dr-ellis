@@ -1,3 +1,6 @@
+# Temporary files
+temp/
+
 # audio files
 *.wav
 *.ogg
