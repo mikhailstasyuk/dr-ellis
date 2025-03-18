@@ -1,3 +1,7 @@
+# audio files
+*.wav
+*.ogg
+
 # misc code
 misc/
 
